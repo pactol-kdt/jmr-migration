@@ -1,59 +1,111 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# JMR Migration
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Internal app for importing Microsoft DataSet XML files into MySQL, with year-aware import/merge and a global records viewer (optional year filter).
 
-## About Laravel
+## Stack
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- Plain PHP API (`public/index.php`, PDO, PHP sessions)
+- React + Vite + Tailwind
+- MySQL (`manhour_importer`) or SQLite
+- Background PHP worker for XML import
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Auth
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Self-registration is disabled. On a fresh database, create the tables and admin user:
 
-## Learning Laravel
+```bash
+php bin/install.php
+```
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+| Email | Password |
+|---|---|
+| `adm@ex.com` | `12345678` |
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+That installer account is a developer, so it can upload. Change the password after first login. An existing database is left as it is.
 
-## Laravel Sponsors
+## First-time setup
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+1. Ensure MySQL is running and the database exists (or run `php bin/create-db.php`), and point `.env` at it.
+2. Install and, for a new database, create tables:
 
-### Premium Partners
+```bash
+npm install
+php bin/install.php
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+3. Run the API and the React dev server (two terminals):
 
-## Contributing
+```bash
+php -S 127.0.0.1:8000 -t public public/index.php
+npm run dev
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Open `http://localhost:5173`.
 
-## Code of Conduct
+Imports stay `pending` until a worker runs. Saving an upload starts `php bin/worker.php` in the background. You can also run it yourself:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+php bin/worker.php
+```
 
-## Security Vulnerabilities
+Production assets:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+npm run build
+php -S 127.0.0.1:8000 -t public public/index.php
+```
 
-## License
+Then open `http://127.0.0.1:8000`.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Scheduler (optional)
+
+Orphan pending uploads under `storage/.../imports/pending` are cleaned daily when the scheduler runs:
+
+Manual cleanup:
+
+```bash
+php bin/cleanup-pending.php --hours=24
+```
+
+## Import flow
+
+1. **Import** → upload one or more XML files (up to 500 total; uploaded in batches of 20, 50 MB each, `.xml` / `.txt`)
+2. App validates extension, then scans dated row names and detects year(s) per file (safe XML load: no network entities, size guard). Unknown/new columns are reported on the confirm screen and ignored during import.
+3. Confirm screen — choose which year(s) to import (all detected years selected by default)
+4. **Mixed-year files** queue **one import batch per selected year** (file is copied per batch). No years are silently dropped.
+5. After multi-batch confirm, a **summary page** lists every queued batch with links
+6. Each job merges into that year, then **deletes the stored XML** (success or failure)
+
+Analyze is throttled (`60` requests / minute) to allow multi-batch uploads.
+
+## Merge rules
+
+Upload names must look like `2017_1042.xml` (`year_employeeId`). The number is stored on `employees` and linked from each import batch and record.
+
+Unique key: `year + employee_id + work_date + location + project + item + type + category + group + person_in_charge`
+
+- New key → insert  
+- Same key, different content → update  
+- Same key, same content → skip  
+- Rows not in the file are **not** deleted  
+- Invalid calendar dates (e.g. Feb 30) are rejected and stored as row errors on the batch  
+
+## Records viewer
+
+- Global **All records** page (`/records`) is the default home; year remains optional filter
+- Partial (`LIKE`) filters for location / project / type / category / group / person in charge
+- Sortable columns and filtered hour totals
+- CSV export (same filters; includes year column)
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `php -S 127.0.0.1:8000 -t public public/index.php` | Run the PHP API |
+| `npm run dev` | Run the React dev server |
+| `php bin/worker.php` | Process queued XML imports |
+| `php bin/cleanup-pending.php [--hours=24]` | Delete orphaned `storage/app/imports/pending/*` files |
+| `php bin/install.php` | Create tables and the admin user on a fresh database |
+| `php bin/sync-kdt.php` | Copy employee profiles from `DB_KDT_DATABASE` |
+
+The React app lives in `resources/js/Pages/` and loads its data from the same paths under `/api`.

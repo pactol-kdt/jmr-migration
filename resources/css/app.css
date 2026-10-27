@@ -1,11 +1,61 @@
-@import 'tailwindcss';
+/*
+ * Design tokens:
+ * brand #1B3A5F | accent #3B6EA5 | surface #F4F6F8 | panel #FFFFFF
+ * Mapped into shadcn CSS variables for incremental UI migration.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-@source '../../storage/framework/views/*.php';
-@source '../**/*.blade.php';
-@source '../**/*.js';
+@layer base {
+    :root {
+        --background: 210 20% 96%;
+        --foreground: 215 28% 17%;
+        --card: 0 0% 100%;
+        --card-foreground: 215 28% 17%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 215 28% 17%;
+        --primary: 214 56% 24%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 210 25% 93%;
+        --secondary-foreground: 214 56% 24%;
+        --muted: 210 20% 94%;
+        --muted-foreground: 215 16% 35%;
+        --accent: 211 47% 44%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 72% 42%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 214 20% 88%;
+        --input: 214 20% 88%;
+        --ring: 211 47% 44%;
+        --radius: 0.5rem;
+    }
 
-@theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+@layer components {
+    .sidebar-sheen {
+        background-image:
+            radial-gradient(ellipse at 0% 0%, rgba(59, 110, 165, 0.42), transparent 58%),
+            radial-gradient(ellipse at 100% 100%, rgba(15, 32, 54, 0.55), transparent 52%);
+    }
+
+    .app-card {
+        @apply border border-slate-200/80 bg-panel shadow-[0_1px_2px_rgba(27,58,95,0.05)] sm:rounded-2xl;
+    }
+
+    .app-th {
+        @apply px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+    }
+
+    .app-td {
+        @apply px-4 py-3.5 text-sm text-ink;
+    }
 }
